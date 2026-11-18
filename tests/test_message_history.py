@@ -1,5 +1,8 @@
+import json
+
 from app.context.message_history import MessageHistory
-from app.models.tool_call import ToolCall, ToolResult
+from app.models.tool_call import ToolCall
+from app.models.tool_result import ToolResult
 
 
 def test_add_user_and_assistant_messages():
@@ -26,15 +29,19 @@ def test_assistant_message_with_tool_calls():
 
 def test_tool_result_is_appended_as_tool_message():
     history = MessageHistory()
-    result = ToolResult(tool_call_id="call_1", name="add", content="3", is_error=False)
+    result = ToolResult(tool_call_id="call_1", name="add", status="success", output=3)
     history.add_tool_result(result)
 
     messages = history.get_messages()
     assert len(messages) == 1
     assert messages[0].role == "tool"
-    assert messages[0].content == "3"
     assert messages[0].tool_call_id == "call_1"
     assert messages[0].name == "add"
+
+    payload = json.loads(messages[0].content)
+    assert payload["status"] == "success"
+    assert payload["output"] == 3
+    assert payload["error"] is None
 
 
 def test_get_messages_returns_a_copy():

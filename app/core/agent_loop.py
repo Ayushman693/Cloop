@@ -6,7 +6,7 @@ from app.context.message_history import MessageHistory
 from app.core.config import AgentConfig
 from app.core.exceptions import MaxIterationsExceededError
 from app.llm.base import ModelClient
-from app.tools.executor import ToolExecutor
+from app.tools.dispatcher import ToolDispatcher
 from app.tools.registry import ToolRegistry
 
 
@@ -15,22 +15,23 @@ class AgentLoop:
     tool calls it requests, and feeding results back until the model
     produces a final response or the iteration limit is reached.
 
-    The loop depends only on the `ModelClient` and `ToolRegistry`/
-    `ToolExecutor` interfaces (injected via the constructor) — it has no
-    knowledge of which provider or which concrete tools are in use.
+    The loop depends only on the `ModelClient`, `ToolRegistry` (for
+    schemas), and `ToolDispatcher` (for execution) interfaces, injected
+    via the constructor — it has no knowledge of which provider or
+    which concrete tools are in use.
     """
 
     def __init__(
         self,
         model_client: ModelClient,
         tool_registry: ToolRegistry,
-        tool_executor: ToolExecutor,
+        tool_dispatcher: ToolDispatcher,
         config: AgentConfig | None = None,
         history: MessageHistory | None = None,
     ) -> None:
         self._model_client = model_client
         self._tool_registry = tool_registry
-        self._tool_executor = tool_executor
+        self._tool_dispatcher = tool_dispatcher
         self._config = config or AgentConfig()
         self._history = history or MessageHistory()
 
@@ -63,8 +64,8 @@ class AgentLoop:
             self._history.add_assistant(
                 content=response.content, tool_calls=response.tool_calls
             )
-            for tool_call in response.tool_calls:
-                result = self._tool_executor.execute(tool_call)
+            results = self._tool_dispatcher.dispatch_all(response.tool_calls)
+            for result in results:
                 self._history.add_tool_result(result)
 
         raise MaxIterationsExceededError(

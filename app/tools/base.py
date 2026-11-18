@@ -20,8 +20,8 @@ class BaseTool(ABC):
     parameters: dict[str, Any] = {"type": "object", "properties": {}}
 
     @abstractmethod
-    def run(self, **kwargs: Any) -> str:
-        """Execute the tool and return a string result.
+    def run(self, **kwargs: Any) -> Any:
+        """Execute the tool and return a JSON-serializable result.
 
         Raising an exception here is expected behavior for failure
         cases; the `ToolExecutor` is responsible for catching it and

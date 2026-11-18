@@ -2,7 +2,8 @@
 
 from app.models.messages import Message, Role
 from app.models.responses import FinishReason, ModelResponse
-from app.models.tool_call import ToolCall, ToolResult
+from app.models.tool_call import ToolCall
+from app.models.tool_result import ToolErrorDetail, ToolResult
 
 __all__ = [
     "Message",
@@ -11,4 +12,5 @@ __all__ = [
     "FinishReason",
     "ToolCall",
     "ToolResult",
+    "ToolErrorDetail",
 ]

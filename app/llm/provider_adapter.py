@@ -7,8 +7,9 @@ A future `ModelClient` implementation for a specific provider should:
 2. Translate `tools` definitions into that provider's tool/function-calling
    schema.
 3. Call the provider SDK.
-4. Normalize the raw reply into a `ModelResponse`, extracting any
-   tool calls into `list[ToolCall]`.
+4. Normalize the raw reply into a `ModelResponse` via
+   `ResponseNormalizer`, which extracts tool calls into `list[ToolCall]`
+   and handles JSON-string-encoded arguments.
 
 Keeping this translation in one place is what lets `AgentLoop` stay
 provider-agnostic: swapping providers means writing a new adapter here,

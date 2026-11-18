@@ -13,12 +13,3 @@ class ToolCall(BaseModel):
     id: str
     name: str
     arguments: dict[str, Any] = Field(default_factory=dict)
-
-
-class ToolResult(BaseModel):
-    """The outcome of executing a `ToolCall`."""
-
-    tool_call_id: str
-    name: str
-    content: str
-    is_error: bool = False

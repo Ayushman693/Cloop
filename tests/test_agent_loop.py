@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from app.core.agent_loop import AgentLoop
@@ -6,6 +8,7 @@ from app.core.exceptions import MaxIterationsExceededError
 from app.models.responses import ModelResponse
 from app.models.tool_call import ToolCall
 from app.tools.base import BaseTool
+from app.tools.dispatcher import ToolDispatcher
 from app.tools.executor import ToolExecutor
 from app.tools.registry import ToolRegistry
 
@@ -21,8 +24,8 @@ class AddTool(BaseTool):
         "required": ["a", "b"],
     }
 
-    def run(self, a: int, b: int) -> str:
-        return str(a + b)
+    def run(self, a: int, b: int) -> int:
+        return a + b
 
 
 class FailingTool(BaseTool):
@@ -30,18 +33,25 @@ class FailingTool(BaseTool):
     description = "Always raises."
     parameters = {"type": "object", "properties": {}}
 
-    def run(self, **kwargs) -> str:
+    def run(self, **kwargs) -> int:
         raise RuntimeError("something went wrong")
 
 
 def _make_loop(model_client, registry=None, max_iterations=10):
     registry = registry or ToolRegistry()
+    dispatcher = ToolDispatcher(registry, ToolExecutor())
     return AgentLoop(
         model_client=model_client,
         tool_registry=registry,
-        tool_executor=ToolExecutor(registry),
+        tool_dispatcher=dispatcher,
         config=AgentConfig(max_iterations=max_iterations),
     )
+
+
+def _tool_payloads(loop):
+    return [
+        json.loads(m.content) for m in loop.history.get_messages() if m.role == "tool"
+    ]
 
 
 def test_final_response_without_tool_calls():
@@ -73,9 +83,11 @@ def test_single_tool_call_then_final_response():
 
     assert result == "The sum is 5."
     assert len(client.calls) == 2
-    tool_messages = [m for m in loop.history.get_messages() if m.role == "tool"]
-    assert len(tool_messages) == 1
-    assert tool_messages[0].content == "5"
+    payloads = _tool_payloads(loop)
+    assert len(payloads) == 1
+    assert payloads[0]["status"] == "success"
+    assert payloads[0]["output"] == 5
+    assert payloads[0]["tool_call_id"] == "call_1"
 
 
 def test_multiple_tool_calls_in_one_turn():
@@ -97,8 +109,9 @@ def test_multiple_tool_calls_in_one_turn():
     result = loop.run("do two additions")
 
     assert result == "Done."
-    tool_messages = [m for m in loop.history.get_messages() if m.role == "tool"]
-    assert [m.content for m in tool_messages] == ["2", "20"]
+    payloads = _tool_payloads(loop)
+    assert [p["output"] for p in payloads] == [2, 20]
+    assert [p["tool_call_id"] for p in payloads] == ["call_1", "call_2"]
 
 
 def test_tool_execution_failure_is_captured_without_crashing():
@@ -117,9 +130,30 @@ def test_tool_execution_failure_is_captured_without_crashing():
     result = loop.run("trigger failure")
 
     assert result == "Recovered."
-    tool_messages = [m for m in loop.history.get_messages() if m.role == "tool"]
-    assert len(tool_messages) == 1
-    assert "something went wrong" in tool_messages[0].content
+    payloads = _tool_payloads(loop)
+    assert len(payloads) == 1
+    assert payloads[0]["status"] == "error"
+    assert payloads[0]["error"]["type"] == "RuntimeError"
+    assert "something went wrong" in payloads[0]["error"]["message"]
+
+
+def test_unknown_tool_name_is_captured_without_crashing():
+    registry = ToolRegistry()
+    tool_call = ToolCall(id="call_1", name="does_not_exist", arguments={})
+    client = MockModelClient(
+        [
+            ModelResponse(content=None, tool_calls=[tool_call], finish_reason="tool_calls"),
+            ModelResponse(content="Recovered.", finish_reason="stop"),
+        ]
+    )
+    loop = _make_loop(client, registry=registry)
+
+    result = loop.run("call a tool that doesn't exist")
+
+    assert result == "Recovered."
+    payloads = _tool_payloads(loop)
+    assert payloads[0]["status"] == "error"
+    assert payloads[0]["error"]["type"] == "ToolNotFoundError"
 
 
 def test_max_iterations_exceeded_raises():

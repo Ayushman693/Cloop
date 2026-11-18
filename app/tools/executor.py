@@ -1,53 +1,43 @@
-"""Resolves and executes tool calls against the registry.
+"""Executes a single, already-resolved tool call.
 
-Separate from `ToolRegistry` so that execution concerns (argument
-validation, error containment) don't leak into tool bookkeeping.
+Deliberately has no dependency on `ToolRegistry`: resolving a tool call
+to a `BaseTool` is the `ToolDispatcher`'s job. This keeps execution and
+registration independently testable and satisfies the architectural
+constraint that `ToolRegistry` and `ToolExecutor` stay decoupled.
 """
 
 from __future__ import annotations
 
-from app.core.exceptions import ToolNotFoundError
-from app.models.tool_call import ToolCall, ToolResult
-from app.tools.registry import ToolRegistry
+from app.models.tool_call import ToolCall
+from app.models.tool_result import ToolResult
+from app.tools.base import BaseTool
+from app.tools.result_handler import ResultHandler
 
 
 class ToolExecutor:
-    """Executes a `ToolCall` and always returns a structured `ToolResult`.
+    """Runs a resolved `BaseTool` and always returns a structured `ToolResult`.
 
-    Tool execution errors (missing tool, bad arguments, runtime
-    exceptions) are caught here and converted into an error
-    `ToolResult` rather than propagating, so one failing tool call
-    cannot crash the agent loop.
+    Any exception raised by the tool's `run` implementation is caught
+    here and converted into an error `ToolResult` rather than
+    propagating, so one failing tool call cannot crash the agent loop.
+    Stateless, so it's safe to call repeatedly for multiple tool calls
+    in the same model turn.
     """
 
-    def __init__(self, registry: ToolRegistry) -> None:
-        self._registry = registry
-
-    def execute(self, tool_call: ToolCall) -> ToolResult:
-        """Resolve `tool_call` via the registry and run it."""
-        try:
-            tool = self._registry.get(tool_call.name)
-        except ToolNotFoundError as exc:
-            return ToolResult(
-                tool_call_id=tool_call.id,
-                name=tool_call.name,
-                content=str(exc),
-                is_error=True,
-            )
-
+    def execute(self, tool: BaseTool, tool_call: ToolCall) -> ToolResult:
+        """Run `tool` with `tool_call.arguments`, preserving `tool_call.id`."""
         try:
             output = tool.run(**tool_call.arguments)
         except Exception as exc:  # noqa: BLE001 - intentional: contain any tool failure
-            return ToolResult(
+            return ResultHandler.failure(
                 tool_call_id=tool_call.id,
                 name=tool_call.name,
-                content=f"Tool '{tool_call.name}' raised an error: {exc}",
-                is_error=True,
+                error_type=type(exc).__name__,
+                message=str(exc),
             )
 
-        return ToolResult(
+        return ResultHandler.success(
             tool_call_id=tool_call.id,
             name=tool_call.name,
-            content=output,
-            is_error=False,
+            output=output,
         )

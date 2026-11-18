@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from app.models.messages import Message
-from app.models.tool_call import ToolCall, ToolResult
+from app.models.tool_call import ToolCall
+from app.models.tool_result import ToolResult
 
 
 class MessageHistory:
@@ -31,7 +32,7 @@ class MessageHistory:
         self._messages.append(
             Message(
                 role="tool",
-                content=result.content,
+                content=result.to_content(),
                 tool_call_id=result.tool_call_id,
                 name=result.name,
             )

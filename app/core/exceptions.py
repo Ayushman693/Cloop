@@ -11,6 +11,10 @@ class ToolNotFoundError(AgentError):
     """Raised when a requested tool name is not present in the registry."""
 
 
+class ToolAlreadyRegisteredError(AgentError):
+    """Raised when registering a tool whose name is already registered."""
+
+
 class ToolExecutionError(AgentError):
     """Raised when a tool's implementation raises during execution."""
 
